@@ -1,39 +1,41 @@
 pipeline {
     agent any
-    tools{
-        maven 'maven_3_5_0'
+    environment {
+        IMAGE_NAME = 'maven:3.8.4-jdk-11'
     }
-    stages{
-        stage('Build Maven'){
-            steps{
-                checkout([$class: 'GitSCM', branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/Java-Techie-jt/devops-automation']]])
-                sh 'mvn clean install'
+    stages {
+        stage('Checkout') {
+            steps {
+        sh 'echo passed'
+        git branch: 'feature', url: 'https://github.com/sarath1494/devops-automation.git'
             }
         }
-        stage('Build docker image'){
-            steps{
-                script{
-                    sh 'docker build -t javatechie/devops-integration .'
+        stage('Build with Maven Docker Image') {
+            steps {
+                script {
+                    docker.image(IMAGE_NAME).inside {
+                        sh 'ls -lrth && mvn clean install'
+                    }
                 }
             }
         }
-        stage('Push image to Hub'){
-            steps{
-                script{
-                   withCredentials([string(credentialsId: 'dockerhub-pwd', variable: 'dockerhubpwd')]) {
-                   sh 'docker login -u javatechie -p ${dockerhubpwd}'
+        stage('Build and Push Docker Image') {
+			environment {
+				DOCKER_IMAGE = "sarath1494/ci-cd:${BUILD_NUMBER}"
+					REGISTRY_CREDENTIALS = credentials('docker-cred')
+				}
+				steps {
+					script {
+						sh ' docker build -t ${DOCKER_IMAGE} .'
+						def dockerImage = docker.image("${DOCKER_IMAGE}")
+						docker.withRegistry('https://index.docker.io/v1/', "docker-cred") {
+							dockerImage.push()
+						sh ' docker rmi ${DOCKER_IMAGE} && docker rmi maven:3.8.4-jdk-11 '
+						}
+					}
+				}
+			}
 
-}
-                   sh 'docker push javatechie/devops-integration'
-                }
-            }
-        }
-        stage('Deploy to k8s'){
-            steps{
-                script{
-                    kubernetesDeploy (configs: 'deploymentservice.yaml',kubeconfigId: 'k8sconfigpwd')
-                }
-            }
-        }
     }
+
 }
